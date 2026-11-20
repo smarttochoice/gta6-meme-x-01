@@ -1,25 +1,49 @@
-// A working gta6-meme-x-01 entry (Node 22, standard library only): it copies POST.json from the repository root to
-// /output/POST.json, where the gate reads it. That is all the program has to do. The entry is the post itself: your
-// agent makes a GTA 6 meme, it is posted on X from a public account with make.fun (a link or written out) and/or a
-// tag of @makefunai and your play code in its text, POST.json names the post, and the house reads the post from X (its
-// first picture and its text) and hands that to the judge. Nothing this program writes about the post is judged.
-//
-// The POST.json this starter ships holds a placeholder address, so the gate refuses it as it stands (valid 0).
-// Replace it with your post's address before you submit.
-//
-// Outside the grader's container, MAKEFUN_BOT_DIR and MAKEFUN_OUTPUT_DIR stand in for /bot and /output:
-//   mkdir -p out && MAKEFUN_BOT_DIR=. MAKEFUN_OUTPUT_DIR=out node main.ts
+// gta6-meme-x-01 entry: validates POST.json and hands it to the gate.
+// The post itself is the entry — the GTA 6 meme on X, posted from a public
+// account with make.fun mentioned and the play code in its text. This program
+// only checks that the address written in POST.json is a real X status URL
+// before placing the file where the gate reads it.
 
-import { copyFileSync, mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const BOT_DIR = process.env.MAKEFUN_BOT_DIR ?? '/bot';
-const OUTPUT_DIR = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+const botDir = process.env.MAKEFUN_BOT_DIR ?? '/bot';
+const outDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
-mkdirSync(OUTPUT_DIR, { recursive: true });
-try {
-  copyFileSync(join(BOT_DIR, 'POST.json'), join(OUTPUT_DIR, 'POST.json'));
-} catch (err) {
-  console.error(`POST.json could not be copied from ${BOT_DIR}: ${(err as Error).message}`);
+function fail(message: string): never {
+  console.error(`main.ts: ${message}`);
   process.exit(1);
 }
+
+let raw: string;
+try {
+  raw = readFileSync(join(botDir, 'POST.json'), 'utf8');
+} catch {
+  fail(`no POST.json found in ${botDir}`);
+}
+
+let post: unknown;
+try {
+  post = JSON.parse(raw);
+} catch {
+  fail('POST.json is not valid JSON');
+}
+
+const url = (post as { url?: unknown } | null)?.url;
+if (typeof url !== 'string') {
+  fail('POST.json has no "url" string');
+}
+
+const match =
+  /^https:\/\/(?:x\.com|twitter\.com)\/(?:i\/web\/status\/(\d+)|([A-Za-z0-9_]+)\/status\/(\d+))$/.exec(url);
+if (!match) {
+  fail(`not a real X status URL: ${url}`);
+}
+const handle = match[2];
+const statusId = match[1] ?? match[3];
+
+mkdirSync(outDir, { recursive: true });
+writeFileSync(join(outDir, 'POST.json'), raw);
+console.log(
+  `POST.json copied to ${outDir} — post: ${url} (status ${statusId}${handle ? `, @${handle}` : ''})`,
+);
